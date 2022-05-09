@@ -5,6 +5,8 @@ import requests
 import logging
 import telegram
 from dotenv import load_dotenv
+from http import HTTPStatus
+from json.decoder import JSONDecodeError
 
 
 load_dotenv()
@@ -13,6 +15,7 @@ load_dotenv()
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -24,6 +27,7 @@ HOMEWORK_STATUSES = {
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
+
 
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(name)s -  %(message)s',
@@ -50,13 +54,13 @@ def send_message(bot, message):
             text=message,
         )
         logging.info('Сообщение отправлено!')
-    except Exception:
+    except telegram.TelegramError:
         logging.error('Сбой отправки сообщения!')
 
 
 def get_api_answer(current_timestamp):
     """Запрос данных с API."""
-    timestamp = current_timestamp or int(time.time())
+    timestamp = current_timestamp
     params = {'from_date': timestamp}
     try:
         response = requests.get(
@@ -64,87 +68,127 @@ def get_api_answer(current_timestamp):
             headers=HEADERS,
             params=params
         )
-        if response.status_code != 200:
-            print('if working!')
-            print(response.status_code)
-            raise ConnectionError
+        if response.status_code != HTTPStatus.OK:
+            raise ConnectionError('status code is not 200')
+        return response.json()
     except ConnectionError as error:
         logging.error(f'Ошибка при запросе к основному API: {error}')
         raise ConnectionError(f'Ошибка при запросе к основному API: {error}')
-    else:
-        return response.json()
+    except JSONDecodeError:
+        logging.error('Ошибка приведения к json')
+        raise JSONDecodeError('Ошибка приведения к json')
 
 
 def check_response(response):
     """Проверка данных от API."""
+    # В этой функции у меня много вопросов.
+    # Не только по самой функции, но и по логике написания всего проекта.
+    # Главный вопрос в конце функции.
     try:
-        list_hw = response['homeworks']
-        list_hw[0]
-    except IndexError:
-        logging.error('Список пуст')
-        raise IndexError('Список пуст')
-    if type(response) is not dict:
-        logging.error('Неверный формат')
-        raise TypeError('Неверный формат')
-    if list_hw is None:
-        logging.error('Отсутствует ключ: homeworks')
-    return list_hw
+        # Скажи, пожалуйста, правильно ли я понимаю.
+        # Можно вызвать исключение вот так.
+        if type(response) is not dict:
+            logging.error('Неверный формат данных от API')
+            raise TypeError('Неверный формат данных от API')
+        # Еще можно использовать isinstance
+        # if not isinstance(response, dict):
+        #     raise TypeError
+
+        # Проверка ключа может быть такая
+        # if 'homeworks' not in response:
+        #     raise KeyError
+
+        # Или исключение ключа само вызовется в процессе выполнения.
+        # И мы должны ловить его в except.
+        list_hw = response['homeworks']  # Проверка ключа 'homeworks'.
+        # Вызовется KeyError в случае отсутствия 'homeworks'.
+        # Тоже и с current_date.
+        # Можно так.
+        response['current_date']  # Проверка ключа 'current_date'.
+        # Или лучше так?
+        # if 'current_date' not in response:
+        #     raise KeyError
+
+        # Здесь проверяем что под 'homeworks' действительно list
+        if not isinstance(response['homeworks'], list):
+            raise TypeError
+        # Но можно было использовать:
+        # if type(response['homeworks']) is not list:
+        #     logging.error('Неверный формат данных от API')
+        #     raise TypeError('Неверный формат данных от API')
+    except KeyError:
+        logging.error('Ключ homeworks или current_date отсутствует.')
+        raise KeyError('Ключ homeworks или current_date отсутствует.')
+    except TypeError:
+        logging.error('Неверный формат данных от API')
+        raise TypeError('Неверный формат данных от API')
+    else:
+        return list_hw
+    # Итого вопрос: Как лучше реализовать вызов исключения?
+    # Как чаще делают в реальных проектах?
+    # И если вариантов написания кода несколько то какой лучше выбрать?
+    # А также что лучше if isinstance или if type(response) is not dict?
+    # Спасибо.
 
 
 def parse_status(homework):
     """Формирование статуса."""
-    if 'homework_name' not in homework:
-        logging.error('не обнаружен ключ homework_name')
-        raise KeyError
-    if 'status' not in homework:
-        logging.error('не обнаружен ключ status')
-        raise KeyError
-    if homework['status'] is None:
-        logging.error('не обнаружен статус домашней работы')
-        raise ValueError
-    homework_name = homework['homework_name']
-    homework_status = homework['status']
-    last_status = ''
-    if homework_status != last_status:
+    try:
+        if not isinstance(homework, dict):
+            logging.error('Неверный формат данных от API')
+            raise TypeError('Неверный формат данных от API')
+        if 'homework_name' not in homework:
+            logging.error('не обнаружен ключ homework_name')
+            raise KeyError
+        if 'status' not in homework:
+            logging.error('не обнаружен ключ status')
+            raise KeyError
+        homework_name = homework['homework_name']
+        homework_status = homework['status']
         verdict = HOMEWORK_STATUSES[homework_status]
-        last_status = HOMEWORK_STATUSES[homework_status]
+    except KeyError:
+        logging.error('Неизвестный статус ДЗ от API.')
+        raise KeyError('Неизвестный статус ДЗ от API.')
+    else:
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверка токенов."""
-    if (PRACTICUM_TOKEN
-        and TELEGRAM_TOKEN
-            and TELEGRAM_CHAT_ID):
+    token_list = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
+    if all(token_list):
         return True
     else:
-        logging.critical('Отсутствие обязательных переменных окружения')
+        for token in token_list:
+            if not token:
+                logging.critical(f'Отсутствие переменной окружения {token}')
         return False
 
 
 def main():
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time())
+    current_timestamp = int(time.time()) - 5
+    current_error = None
     while True:
         try:
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
             if len(homeworks):
-                last_homework = homeworks[0]
-                message = parse_status(last_homework)
-                send_message(bot, message)
-                current_timestamp = response['current_date'] + 1
+                for homework in homeworks:
+                    message = parse_status(homework)
+                    send_message(bot, message)
+                # Проверку current_date вынес на уровень функции check_response
+                current_timestamp = response['current_date']
             else:
                 logging.debug('отсутствие в ответе новых статусов')
-            time.sleep(RETRY_TIME)
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            send_message(bot, message)
-            logging.error(message)
+            if error != current_error:
+                current_error = error
+                message = f'Сбой в работе программы: {error}'
+                send_message(bot, message)
+        finally:
             time.sleep(RETRY_TIME)
-        else:
-            pass
 
 
 if __name__ == '__main__':
