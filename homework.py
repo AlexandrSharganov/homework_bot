@@ -81,76 +81,43 @@ def get_api_answer(current_timestamp):
 
 def check_response(response):
     """Проверка данных от API."""
-    # В этой функции у меня много вопросов.
-    # Не только по самой функции, но и по логике написания всего проекта.
-    # Главный вопрос в конце функции.
     try:
-        # Скажи, пожалуйста, правильно ли я понимаю.
-        # Можно вызвать исключение вот так.
-        if type(response) is not dict:
-            logging.error('Неверный формат данных от API')
-            raise TypeError('Неверный формат данных от API')
-        # Еще можно использовать isinstance
-        # if not isinstance(response, dict):
-        #     raise TypeError
-
-        # Проверка ключа может быть такая
-        # if 'homeworks' not in response:
-        #     raise KeyError
-
-        # Или исключение ключа само вызовется в процессе выполнения.
-        # И мы должны ловить его в except.
-        list_hw = response['homeworks']  # Проверка ключа 'homeworks'.
-        # Вызовется KeyError в случае отсутствия 'homeworks'.
-        # Тоже и с current_date.
-        # Можно так.
-        response['current_date']  # Проверка ключа 'current_date'.
-        # Или лучше так?
-        # if 'current_date' not in response:
-        #     raise KeyError
-
-        # Здесь проверяем что под 'homeworks' действительно list
-        if not isinstance(response['homeworks'], list):
-            raise TypeError
-        # Но можно было использовать:
-        # if type(response['homeworks']) is not list:
-        #     logging.error('Неверный формат данных от API')
-        #     raise TypeError('Неверный формат данных от API')
-    except KeyError:
-        logging.error('Ключ homeworks или current_date отсутствует.')
-        raise KeyError('Ключ homeworks или current_date отсутствует.')
-    except TypeError:
-        logging.error('Неверный формат данных от API')
-        raise TypeError('Неверный формат данных от API')
+        if not isinstance(response, dict):
+            raise TypeError('Ответ не содержит тип данных dict')
+        if not response.get('homeworks'):
+            raise KeyError('Ключ homeworks отсутствует.')
+        if not response.get('current_date'):
+            raise KeyError('Ключ current_date отсутствует.')
+        if not isinstance(response.get('homeworks'), list):
+            raise TypeError('Ответ не содержит тип данных list')
+    except KeyError as error:
+        logging.error(f'Ключ не обнаружен: {error}')
+        raise KeyError(f'Ключ не обнаружен: {error}')
+    except TypeError as error:
+        logging.error(f'Неверный формат данных от API: {error}')
+        raise TypeError(f'Неверный формат данных от API: {error}')
     else:
-        return list_hw
-    # Итого вопрос: Как лучше реализовать вызов исключения?
-    # Как чаще делают в реальных проектах?
-    # И если вариантов написания кода несколько то какой лучше выбрать?
-    # А также что лучше if isinstance или if type(response) is not dict?
-    # Спасибо.
+        return response.get('homeworks')
 
 
 def parse_status(homework):
     """Формирование статуса."""
-    try:
-        if not isinstance(homework, dict):
-            logging.error('Неверный формат данных от API')
-            raise TypeError('Неверный формат данных от API')
-        if 'homework_name' not in homework:
-            logging.error('не обнаружен ключ homework_name')
-            raise KeyError
-        if 'status' not in homework:
-            logging.error('не обнаружен ключ status')
-            raise KeyError
-        homework_name = homework['homework_name']
-        homework_status = homework['status']
-        verdict = HOMEWORK_STATUSES[homework_status]
-    except KeyError:
+    if not isinstance(homework, dict):
+        logging.error('Неверный формат данных от API')
+        raise TypeError('Неверный формат данных от API')
+    if not homework.get('homework_name'):
+        logging.error('В ответе API не обнаружен ключ homework_name')
+        raise KeyError('В ответе API не обнаружен ключ homework_name')
+    if not homework.get('status'):
+        logging.error('В ответе API не обнаружен ключ status')
+        raise KeyError('В ответе API не обнаружен ключ status')
+    homework_name = homework['homework_name']
+    homework_status = homework['status']
+    if not HOMEWORK_STATUSES.get(homework_status):
         logging.error('Неизвестный статус ДЗ от API.')
         raise KeyError('Неизвестный статус ДЗ от API.')
-    else:
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    verdict = HOMEWORK_STATUSES[homework_status]
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
@@ -168,27 +135,27 @@ def check_tokens():
 def main():
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time()) - 5
+    current_timestamp = int(time.time()) - RETRY_TIME
     current_error = None
-    while True:
-        try:
-            response = get_api_answer(current_timestamp)
-            homeworks = check_response(response)
-            if len(homeworks):
-                for homework in homeworks:
-                    message = parse_status(homework)
-                    send_message(bot, message)
-                # Проверку current_date вынес на уровень функции check_response
+    if check_tokens():
+        while True:
+            try:
+                response = get_api_answer(current_timestamp)
+                homeworks = check_response(response)
+                if len(homeworks):
+                    for homework in homeworks:
+                        message = parse_status(homework)
+                        send_message(bot, message)
+                else:
+                    logging.debug('отсутствие в ответе новых статусов')
                 current_timestamp = response['current_date']
-            else:
-                logging.debug('отсутствие в ответе новых статусов')
-        except Exception as error:
-            if error != current_error:
-                current_error = error
-                message = f'Сбой в работе программы: {error}'
-                send_message(bot, message)
-        finally:
-            time.sleep(RETRY_TIME)
+            except Exception as error:
+                if error != current_error:
+                    current_error = error
+                    message = f'Сбой в работе программы: {error}'
+                    send_message(bot, message)
+            finally:
+                time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
