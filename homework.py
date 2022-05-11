@@ -84,11 +84,12 @@ def check_response(response):
     try:
         if not isinstance(response, dict):
             raise TypeError('Ответ не содержит тип данных dict')
-        if not response.get('homeworks'):
+        homeworks = response.get('homeworks')
+        if not homeworks:
             raise KeyError('Ключ homeworks отсутствует.')
         if not response.get('current_date'):
             raise KeyError('Ключ current_date отсутствует.')
-        if not isinstance(response.get('homeworks'), list):
+        if not isinstance(homeworks, list):
             raise TypeError('Ответ не содержит тип данных list')
     except KeyError as error:
         logging.error(f'Ключ не обнаружен: {error}')
@@ -97,7 +98,7 @@ def check_response(response):
         logging.error(f'Неверный формат данных от API: {error}')
         raise TypeError(f'Неверный формат данных от API: {error}')
     else:
-        return response.get('homeworks')
+        return homeworks
 
 
 def parse_status(homework):
@@ -114,8 +115,8 @@ def parse_status(homework):
     homework_name = homework['homework_name']
     homework_status = homework['status']
     if not HOMEWORK_STATUSES.get(homework_status):
-        logging.error('Неизвестный статус ДЗ от API.')
-        raise KeyError('Неизвестный статус ДЗ от API.')
+        logging.error(f'Неизвестный статус ДЗ от API: {homework_status}')
+        raise KeyError(f'Неизвестный статус ДЗ от API: {homework_status}')
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -149,6 +150,7 @@ def main():
                 else:
                     logging.debug('отсутствие в ответе новых статусов')
                 current_timestamp = response['current_date']
+                current_error = None
             except Exception as error:
                 if error != current_error:
                     current_error = error
