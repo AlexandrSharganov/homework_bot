@@ -138,26 +138,27 @@ def main():
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time()) - RETRY_TIME
     current_error = None
-    if check_tokens():
-        while True:
-            try:
-                response = get_api_answer(current_timestamp)
-                homeworks = check_response(response)
-                if len(homeworks):
-                    for homework in homeworks:
-                        message = parse_status(homework)
-                        send_message(bot, message)
-                else:
-                    logging.debug('отсутствие в ответе новых статусов')
-                current_timestamp = response['current_date']
-                current_error = None
-            except Exception as error:
-                if error != current_error:
-                    current_error = error
-                    message = f'Сбой в работе программы: {error}'
+    if not check_tokens():
+        raise Exception('Отсутствие переменной окружения.')
+    while True:
+        try:
+            response = get_api_answer(current_timestamp)
+            homeworks = check_response(response)
+            if len(homeworks):
+                for homework in homeworks:
+                    message = parse_status(homework)
                     send_message(bot, message)
-            finally:
-                time.sleep(RETRY_TIME)
+            else:
+                logging.debug('отсутствие в ответе новых статусов')
+            current_timestamp = response['current_date']
+            current_error = None
+        except Exception as error:
+            if error != current_error:
+                current_error = error
+                message = f'Сбой в работе программы: {error}'
+                send_message(bot, message)
+        finally:
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
