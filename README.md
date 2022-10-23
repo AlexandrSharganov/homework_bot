@@ -6,7 +6,7 @@
 
 ### Технологии:
 #### python 3.7
-#### vpython-telegram-bot
+#### python-telegram-bot
 
 ### Работу выполнил
 - [Александр Шарганов](https://github.com/AlexandrSharganov)
